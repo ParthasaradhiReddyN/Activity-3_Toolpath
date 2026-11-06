@@ -240,22 +240,41 @@ def plot(z,all_polygons,toolpath):
 
 def check_connectors(line,all_infill_lines,printed_connectors):
     clear=True
-
     for infill_line in all_infill_lines:
-
         if line.intersects(infill_line):
             clear = False
             break
 
     if clear:
         for previous_connector in printed_connectors:
-
             if line.intersects(previous_connector):
                 clear = False
                 break
     return clear
 
-def generate_toolpath(stl_path="models/1squares.stl",D=0.25,W=0.4,line_angle=0):
+
+
+def check_infill_endpoint_collision(connector,all_infill_lines,selected_point,tolerance=1e-5):
+    for infill_line in all_infill_lines:
+
+        endpoints = [
+            Point(infill_line.coords[0]),
+            Point(infill_line.coords[-1])
+        ]
+
+        for endpoint in endpoints:
+
+            # Allow the intended destination endpoint
+            if endpoint.distance(Point(selected_point)) <= tolerance:
+                continue
+
+            # Reject contact with other infill endpoints
+            if connector.distance(endpoint) <= tolerance:
+                return False
+
+    return True
+
+def generate_toolpath(stl_path="models/benchy.stl",D=0.25,W=0.4,line_angle=0):
     shutil.rmtree("toolpath", ignore_errors=True)
     all_toolpaths={}
     line_spacing=W/D
@@ -349,6 +368,7 @@ def generate_toolpath(stl_path="models/1squares.stl",D=0.25,W=0.4,line_angle=0):
                         if clear:
                             selected_connector = connector
                             connector_type = "EXTRUSION"
+                            
 
                     # STEP 2: Try boundary connector if direct fails
                     if not clear:
@@ -357,7 +377,7 @@ def generate_toolpath(stl_path="models/1squares.stl",D=0.25,W=0.4,line_angle=0):
                         # if (boundary_path is not None and boundary_path.length <= max_arc_length)):
                         if (boundary_path is not None):
                             if boundary_path.length > 2 * line_offset:
-
+                                
                                 core = substring(boundary_path,line_offset,boundary_path.length - line_offset)
                                 clear = check_connectors(core,all_infill_lines,printed_connectors)
                             else:
@@ -366,6 +386,13 @@ def generate_toolpath(stl_path="models/1squares.stl",D=0.25,W=0.4,line_angle=0):
                             if clear:
                                 selected_connector = boundary_path
                                 connector_type = "EXTRUSION"
+
+                    if clear:
+                        clear = check_infill_endpoint_collision(
+                                core,
+                                all_infill_lines,
+                                point
+                            )
 
                     # STEP 3: Reject this candidate if both fail
                     if not clear:
@@ -407,6 +434,7 @@ def generate_toolpath(stl_path="models/1squares.stl",D=0.25,W=0.4,line_angle=0):
             if connector_type == "EXTRUSION":
                 connector = selected_connector
                 printed_connectors.append(connector)
+                
     
             toolpath.append({"type": connector_type,"geometry": connector})
             toolpath.append({"type": "INFILL","geometry": selected_segment})
